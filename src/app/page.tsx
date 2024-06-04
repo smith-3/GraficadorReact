@@ -1,113 +1,322 @@
-import Image from "next/image";
+'use client'
+import React, { useState, useRef, MutableRefObject, useEffect } from 'react';
+import { Box, Typography, Paper, Button } from '@mui/material';
+import { Line } from 'react-chartjs-2';
+import { Chart, CategoryScale, LinearScale, Title, Tooltip, Legend, LineController, PointElement, LineElement } from 'chart.js';
+import { create, all } from 'mathjs';
+import Head from 'next/head';
+import FunctionList from '../components/FunctionList';
+import InputForms from '../components/InputForms';
+import { Plot } from '@/types/type';
+
+Chart.register(CategoryScale, LinearScale, Title, Tooltip, Legend, LineController, PointElement, LineElement);
+
+const math = create(all);
 
 export default function Home() {
+  const [error, setError] = useState<string | null>(null);
+  const [plots, setPlots] = useState<Plot[]>([]);
+  const [intervalValue, setIntervalValue] = useState<number>(0.5);
+  const [xMin, setXMin] = useState<number>(-10);
+  const [xMax, setXMax] = useState<number>(10);
+  const [yMin, setYMin] = useState<number>(-10);
+  const [yMax, setYMax] = useState<number>(10);
+  const [criticalPoints, setCriticalPoints] = useState<Array<{ x: number, y: number, color: string }>>([]);
+
+  const functionInputRef = useRef<HTMLInputElement>(null);
+  const intervalRef = useRef<HTMLInputElement>(null);
+  const chartRef = useRef<Chart<"line">>(null);
+
+  const handleGraph = () => {
+    const functionInput = functionInputRef.current?.value.trim();
+
+    if (!functionInput) {
+      setError('Error: Debes ingresar una función.');
+      return;
+    }
+
+    setError(null);
+
+    try {
+      math.evaluate('f(x) = ' + functionInput);
+      const currentId = plots.length > 0 ? plots[plots.length - 1].id + 1 : 0;
+      const color = '#' + ((Math.random() * 0xffffff) << 0).toString(16);
+      setPlots([...plots, { id: currentId, formula: functionInput, color }]);
+      if (functionInputRef.current) {
+        functionInputRef.current.value = '';
+      }
+
+      // Calculate critical points
+      const derivative = math.derivative(functionInput, 'x').toString();
+      const criticalPoints = calculateCriticalPoints(functionInput, derivative, xMin, xMax);
+      setCriticalPoints(criticalPoints);
+
+    } catch (error: any) {
+      setError(`Error: ${error.message}`);
+    }
+  };
+
+  const calculateCriticalPoints = (functionInput: string, derivative: string, xMin: number, xMax: number) => {
+    const criticalPoints: Array<{ x: number, y: number, color: string }> = [];
+    for (let x = xMin; x <= xMax; x += intervalValue) {
+      try {
+        const y = math.evaluate(derivative, { x });
+        if (Math.abs(y) < 1e-5) { // consider it a critical point
+          const originalY = math.evaluate(functionInput, { x });
+          const color = '#' + ((Math.random() * 0xffffff) << 0).toString(16);
+          criticalPoints.push({ x, y: originalY, color });
+        }
+      } catch (error) {
+        console.error(`Error evaluating derivative at x=${x}: ${error}`);
+      }
+    }
+    return criticalPoints;
+  };
+
+  const handleEditFormula = (id: number, newFormula: string) => {
+    const updatedPlots = plots.map((plot) => (plot.id === id ? { ...plot, formula: newFormula } : plot));
+    setPlots(updatedPlots);
+  
+    // Recalcular los puntos críticos
+    try {
+      math.evaluate('f(x) = ' + newFormula);
+      const derivative = math.derivative(newFormula, 'x').toString();
+      const criticalPoints = calculateCriticalPoints(newFormula, derivative, xMin, xMax);
+      setCriticalPoints(criticalPoints);
+    } catch (error: any) {
+      setError(`Error: ${error.message}`);
+    }
+  };
+  
+  const handleDeletePlot = (id: number) => {
+    const remainingPlots = plots.filter((plot) => plot.id !== id);
+    setPlots(remainingPlots);
+  };
+
+  const handleColorChange = (id: number) => {
+    const updatedPlots = plots.map((plot) => (plot.id === id ? { ...plot, color: handleColor().color } : plot));
+    setPlots(updatedPlots);
+  };
+
+  const handleColor = () => {
+    return { color: '#' + ((Math.random() * 0xffffff) << 0).toString(16) };
+  };
+
+  const handleIntervalChange = () => {
+    const interval = parseFloat(intervalRef.current?.value || '0.5');
+    if (!isNaN(interval) && interval > 0) {
+      setIntervalValue(interval);
+    }
+  };
+
+  const generateData = (formula: string) => {
+    const data = [];
+    const modifiedFormula = formula.replace(/ln/g, 'log');
+    for (let x = xMin; x <= xMax; x += intervalValue) {
+      try {
+        const scope = { x };
+        let y = math.evaluate(modifiedFormula, scope);
+        if (!isFinite(y)) {
+          throw new Error('Value is not finite');
+        }
+        data.push({ x, y });
+      } catch (error) {
+        console.error(`Error evaluating formula at x=${x}: ${error}`);
+      }
+    }
+    return data;
+  };
+
+  const generateLabels = () => {
+    const labels = [];
+    for (let x = xMin; x <= xMax; x += intervalValue) {
+      labels.push(x);
+    }
+    return labels;
+  };
+
+  const chartData = {
+    labels: generateLabels(),
+    datasets: [
+      ...plots.map((plot) => ({
+        label: plot.formula,
+        data: generateData(plot.formula),
+        borderColor: plot.color,
+        fill: false,
+        tension: 0.1,
+        pointRadius: 5,
+      })),
+      {
+        label: 'Puntos Críticos',
+        data: criticalPoints.map((point) => ({ x: point.x, y: point.y })),
+        pointBackgroundColor: criticalPoints.map((point) => point.color),
+        pointBorderColor: criticalPoints.map((point) => point.color),
+        pointRadius: 7,
+        showLine: false,
+      },
+    ],
+  };
+
+  const options = {
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: 'X',
+        },
+        min: xMin, // Límite mínimo del eje X
+        max: xMax, // Límite máximo del eje X
+      },
+      y: {
+        title: {
+          display: true,
+          text: 'Y',
+        },
+        min: yMin, // Límite mínimo del eje Y
+        max: yMax, // Límite máximo del eje Y
+      },
+    },
+    plugins: {
+      legend: {
+        display: false, // Oculta la leyenda
+      },
+    },
+  };
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    if (event.buttons !== 1) return; // Solo actúa si se mantiene presionado el botón izquierdo del ratón
+    const movementX = event.movementX / 25; // Ajustar la velocidad de desplazamiento
+    const movementY = event.movementY / 25; // Ajustar la velocidad de desplazamiento
+    setXMin((prev) => Math.round(prev - movementX));
+    setXMax((prev) => Math.round(prev - movementX));
+    setYMin((prev) => Math.round(prev + movementY));
+    setYMax((prev) => Math.round(prev + movementY));
+  };
+
+  const handleDownloadImage = () => {
+    if (!chartRef.current) return;
+    const canvas = chartRef.current.canvas as HTMLCanvasElement;
+    const ctx = canvas.getContext('2d');
+
+    // Crear un nuevo canvas temporal para dibujar el fondo blanco
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+
+    // Dibujar fondo blanco en el canvas temporal
+    tempCtx.fillStyle = '#ffffff';
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+    // Dibujar el contenido del canvas original en el canvas temporal
+    tempCtx.drawImage(canvas, 0, 0);
+
+    // Descargar la imagen desde el canvas temporal
+    const link = document.createElement('a');
+    link.download = 'chart.jpg';
+    link.href = tempCanvas.toDataURL('image/jpeg');
+    link.click();
+  };
+
+  const handleColorChangeCriticalPoint = (index: number) => {
+    const newColor = handleColor().color;
+    const updatedCriticalPoints = criticalPoints.map((point, i) =>
+      i === index ? { ...point, color: newColor } : point
+    );
+    setCriticalPoints(updatedCriticalPoints);
+  };
+  
+
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+    <>
+      <Head>
+        <title>Rocket Simulator</title>
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
+      <main className="flex min-h-screen">
+        <aside className="w-1/4 bg-gray-100 p-4 flex flex-col justify-between h-full">
+          <div>
+            <FunctionList
+              plots={plots}
+              handleEditFormula={handleEditFormula}
+              handleColorChange={handleColorChange}
+              handleDeletePlot={handleDeletePlot}
             />
-          </a>
-        </div>
-      </div>
+            <InputForms
+              functionInputRef={functionInputRef}
+              intervalRef={intervalRef}
+              handleGraph={handleGraph}
+              handleIntervalChange={handleIntervalChange}
+              intervalValue={intervalValue}
+              setXMin={setXMin}
+              setXMax={setXMax}
+              setYMin={setYMin}
+              setYMax={setYMax}
+              xMin={xMin}
+              xMax={xMax}
+              yMin={yMin}
+              yMax={yMax}
+            />
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
+<Box>
+  <Typography variant="h6" component="div">
+    Puntos Críticos:
+  </Typography>
+  {criticalPoints.length > 0 ? (
+    <Box>
+      {criticalPoints.map((point, index) => (
+        <Paper
+          key={index}
+          elevation={2}
+          sx={{
+            padding: '10px',
+            margin: '10px 0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
         >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+            <Typography>
+              x: {point.x}, y: {point.y}
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            onClick={() => handleColorChangeCriticalPoint(index)} style={{ backgroundColor: point.color, marginLeft: '8px' }}>
+            {':3'}
+          </Button>
+        </Paper>
+      ))}
+    </Box>
+  ) : (
+    <Typography>No se encontraron puntos críticos.</Typography>
+  )}
+</Box>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+          </div>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleDownloadImage}
+            className="mt-auto mx-auto"
+          >
+            Descargar Imagen
+          </Button>
+        </aside>
+        <section onMouseMove={handleMouseMove} className="flex-1 flex flex-col items-center justify-center bg-gray-200 p-4 rounded-lg shadow-lg">
+          <Paper elevation={3} className="w-full h-full p-4 rounded-lg shadow-md bg-white">
+            <Typography variant="h6" gutterBottom>
+              Gráfico de funciones
+            </Typography>
+            <Line ref={chartRef as MutableRefObject<any>} data={chartData} options={options} color='#ffffff' height={0} />
+          </Paper>
+        </section>
+      </main>
+    </>
   );
 }
