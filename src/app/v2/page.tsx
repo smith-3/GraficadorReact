@@ -24,7 +24,7 @@ export default function Home() {
   const intervalRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [plots, setPlots] = useState<{ id: number; formula: string; color: string }[]>([]);
-  const [intervalValue, setIntervalValue] = useState<number>(0.5); // Valor por defecto del intervalo
+  const [intervalValue, setIntervalValue] = useState<number>(0.1); // Valor por defecto del intervalo
   const [xMin, setXMin] = useState<number>(-10);
   const [xMax, setXMax] = useState<number>(10);
   const [yMin, setYMin] = useState<number>(-10);
@@ -75,7 +75,7 @@ export default function Home() {
   };
 
   const handleIntervalChange = () => {
-    const interval = parseFloat(intervalRef.current?.value || '0.5');
+    const interval = parseFloat(intervalRef.current?.value || '0.1');
     if (!isNaN(interval) && interval > 0) {
       setIntervalValue(interval);
     }
@@ -92,20 +92,18 @@ export default function Home() {
           throw new Error('Value is not finite');
         }
         data.push({ x, y });
-        console.log(x,y)
       } catch (error) {
         console.error(`Error evaluating formula at x=${x}: ${error}`);
-        // No hacer push de valores no válidos
       }
     }
     return data;
   };
-  
 
   const generateLabels = () => {
     const labels = [];
-    for (let x = xMin; x <= xMax; x += intervalValue) {
-      labels.push(x);
+    const step = (xMax - xMin) / 10; // Ajusta la cantidad de labels para que sean manejables
+    for (let x = xMin; x <= xMax; x += step) {
+      labels.push(x.toFixed(2)); // Formato de 2 decimales
     }
     return labels;
   };
@@ -116,42 +114,45 @@ export default function Home() {
       label: plot.formula,
       data: generateData(plot.formula),
       borderColor: plot.color,
+      borderWidth: 1,
       fill: false,
       tension: 0.1,
-      pointRadius: 5,
+      pointRadius: 2, // Tamaño de los puntos reducido
+      showLine: true, // Mostrar líneas entre los puntos
     })),
   };
 
   const options = {
+    responsive: true, // Hacer el gráfico responsivo
     scales: {
       x: {
         title: {
           display: true,
           text: 'X',
         },
-        min: xMin, // Límite mínimo del eje X
-        max: xMax, // Límite máximo del eje X
+        min: xMin,
+        max: xMax,
       },
       y: {
         title: {
           display: true,
           text: 'Y',
         },
-        min: yMin, // Límite mínimo del eje Y
-        max: yMax, // Límite máximo del eje Y
+        min: yMin,
+        max: yMax,
       },
     },
     plugins: {
       legend: {
-        display: false, // Oculta la leyenda
+        display: false,
       },
     },
   };
 
   const handleMouseMove = (event: React.MouseEvent) => {
-    if (event.buttons !== 1) return; // Solo actúa si se mantiene presionado el botón izquierdo del ratón
-    const movementX = event.movementX / 50; // Ajustar la velocidad de desplazamiento
-    const movementY = event.movementY / 50; // Ajustar la velocidad de desplazamiento
+    if (event.buttons !== 1) return;
+    const movementX = event.movementX / 50;
+    const movementY = event.movementY / 50;
     setXMin((prev) => Math.round(prev - movementX));
     setXMax((prev) => Math.round(prev - movementX));
     setYMin((prev) => Math.round(prev + movementY));
@@ -181,7 +182,7 @@ export default function Home() {
                       onChange={(e) => handleEditFormula(plot.id, e.target.value)}
                       variant="outlined"
                       fullWidth
-                      placeholder="Ej. sin(x), cos(x), ln(x)"
+                      placeholder="Ej. sin(x), cos(x), ln(x), log(x,2)"
                       className="mb-2"
                     />
                   } />
@@ -199,7 +200,7 @@ export default function Home() {
               inputRef={functionInputRef}
               variant="outlined"
               fullWidth
-              placeholder="Ej. sin(x), cos(x), ln(x)"
+              placeholder="Ej. sin(x), cos(x), ln(x), log(x,2)"
               className="mb-2"
             />
             <Button variant="contained" color="primary" onClick={handleGraph} style={{ marginLeft: '8px' }}>
@@ -215,7 +216,7 @@ export default function Home() {
               fullWidth
               type="number"
               defaultValue={intervalValue.toString()}
-              InputProps={{ inputProps: { min: 0.5, step: 0.5 } }}
+              InputProps={{ inputProps: { min: 0.1, step: 0.1 } }}
               className="mb-2"
             />
             <Button variant="contained" color="primary" onClick={handleIntervalChange} style={{ marginLeft: '8px' }}>

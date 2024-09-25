@@ -77,6 +77,10 @@ export default function Home() {
     const updatedPlots = plots.map((plot) => (plot.id === id ? { ...plot, formula: newFormula } : plot));
     setPlots(updatedPlots);
   
+    if (newFormula == 'l') {
+      setError('Error: Debes ingresar una función .');
+      return;
+    }
     // Recalcular los puntos críticos
     try {
       math.evaluate('f(x) = ' + newFormula);
@@ -112,16 +116,28 @@ export default function Home() {
   const generateData = (formula: string) => {
     const data = [];
     const modifiedFormula = formula.replace(/ln/g, 'log');
+    const largePositive = 1e2; // Un número grande positivo
+    const largeNegative = -1e2; // Un número grande negativo
+  
     for (let x = xMin; x <= xMax; x += intervalValue) {
       try {
         const scope = { x };
         let y = math.evaluate(modifiedFormula, scope);
+        
         if (!isFinite(y)) {
-          throw new Error('Value is not finite');
+          if (y > 0) {
+            y = largePositive; // Si tiende a infinito positivo
+          } else if (y < 0) {
+            y = largeNegative; // Si tiende a infinito negativo
+          } else {
+            throw new Error('Value is not finite');
+          }
         }
+  
         data.push({ x, y });
       } catch (error) {
         console.error(`Error evaluating formula at x=${x}: ${error}`);
+        // No hacer push de valores no válidos
       }
     }
     return data;
@@ -143,6 +159,7 @@ export default function Home() {
         data: generateData(plot.formula),
         borderColor: plot.color,
         fill: false,
+        //borderWidth: 1,
         tension: 0.1,
         pointRadius: 5,
       })),
@@ -151,13 +168,14 @@ export default function Home() {
         data: criticalPoints.map((point) => ({ x: point.x, y: point.y })),
         pointBackgroundColor: criticalPoints.map((point) => point.color),
         pointBorderColor: criticalPoints.map((point) => point.color),
-        pointRadius: 7,
+        pointRadius: 10,
         showLine: false,
       },
     ],
   };
 
   const options = {
+    responsive: true,
     scales: {
       x: {
         title: {
@@ -166,6 +184,7 @@ export default function Home() {
         },
         min: xMin, // Límite mínimo del eje X
         max: xMax, // Límite máximo del eje X
+        beginAtZero: true,
       },
       y: {
         title: {
@@ -178,7 +197,7 @@ export default function Home() {
     },
     plugins: {
       legend: {
-        display: false, // Oculta la leyenda
+        display: false,
       },
     },
   };
